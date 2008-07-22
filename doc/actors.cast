@@ -1,0 +1,114 @@
+module Actor
+  eigenmodule
+    def new
+      case function(:loop).arity
+        when 0
+          spawn { self::loop }
+        when 1
+          spawn { self::loop(self::initial_state) }
+        else
+          spawn { self::loop(*self::initial_state) }
+        end
+      end
+    end
+  end
+  
+  # Actor.new produces a basic actor that endlessly loops,
+  # but a new definition can always be assigned to the actor's eigenmodule
+  def loop
+    loop
+  end
+  
+  # for convenience, default implementation returns empty hash
+  def initial_state
+    {}
+  end
+end
+
+module Server
+  eigenmodule
+    set_callable? = true
+    set_castable? = false
+    callable_functions = Set.new
+    castable_functions = Set.new
+    
+    def public
+      callable
+      castable
+    end
+    
+    def private
+      uncallable
+      uncastable
+    end
+    
+    def callable
+      set_callable = true
+    end
+    
+    def callable(name)
+      callable_functions.add(name)
+    end
+    
+    def uncallable
+      set_callable = false
+    end
+    
+    def castable
+      set_castable = true
+    end
+    
+    def castable(name)
+      castable_functions.add(name)
+    end
+    
+    def uncastable
+      set_castable = false
+    end
+    
+    def function_added(name, function)
+      callable_functions.add(name) if set_callable?
+      castable_functions.add(name) if set_castable?
+    end
+  end
+  
+  def loop(state)
+    receive
+      call(name, *arguments)
+        handle(state, :call, sender, name, arguments)
+      end
+      cast(name, *arguments)
+        handle(state, :cast, sender, name, arguments)
+      end
+    end
+  end
+  
+  def handle(state, invocation_type, sender, name, arguments)
+    fn = function(name)
+    sender:error("No function named #{name}.") unless fn
+    sender:error("Function #{name} not #{type}able") unless able?(name, invocation_type)
+
+    case invocation_type
+    when :call
+      [result, state] = fn(state, *arguments)
+      sender:reply(result)
+    when :cast
+      fn(state, *arguments)
+
+    end
+    loop(state)
+  end
+    
+  def function(name)
+    module.function(name)
+  end
+  
+  def able?(name, invocation_type)
+    case invocation_type
+    when :call
+      module.callable_functions.has?(name)
+    when :cast
+      module.castable_functions.has?(name)
+    end
+  end
+end
