@@ -1,0 +1,72 @@
+module Server
+  def loop(state)
+    receive
+      call(name, *arguments)
+        handle(state, :call, sender, name, arguments)
+      end
+      cast(name, *arguments)
+        handle(state, :cast, sender, name, arguments)
+      end
+    end
+  end
+  
+  def handle(state, invocation_type, sender, name, arguments)
+    fn = function(name)
+    sender:error("No function named #{name}.") unless fn
+
+    case invocation_type
+    when :call
+      result = fn(*arguments)
+      sender:reply(result)
+    when :cast
+      fn(*arguments)
+    end
+    loop(state)
+  end
+    
+  def function(name)
+    module.function(name)
+  end
+end
+
+####################### Compilation of metamodule protocol
+
+module Module < Server
+  def new
+    spawn { self.function(loop)() }
+  end
+end
+
+### One layer
+
+Module = Module.new(Server)
+Module:add_function(CompiledFunction.new(:new, [], InstructionSequence.new do
+    push_closure CompiledFunction.new(nil, [], InstructionSequence.new do
+      push_self
+      push_literal 'loop'
+      call 'function', 1
+      exec_anonymous 0
+    end)
+    exec 'spawn', 1
+  end
+))
+
+### Two layers
+
+InstructionSequence.new do
+  push_global :Module
+  push_global :Server
+  call :new, 1
+  assign_global :Module
+  push_global :Module
+  push_closure CompiledFunction.new(:new, [], InstructionSequence.new do
+    push_closure CompiledFunction.new(nil, [], InstructionSequence.new do
+      push_self
+      push_literal :loop
+      call :function, 1
+      exec_anonymous 0
+    end)
+    exec :spawn, 1
+  end
+  cast :add_function, 1
+end
